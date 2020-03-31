@@ -62,7 +62,7 @@ pub fn sendCode(code: &[u8;2],mut stream: &TcpStream) {
             return ()
         }
         else {
-            println!("Failed to send code (no confirmation) : return code {:?}", &resp);
+            println!("Failed to send code {:?} (no confirmation) : return code {:?}", &code, &resp);
             return ()
         }
     }
@@ -161,11 +161,11 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
     let mut message = [0;8];
     getPacket(&mut message, &stream);
     fileSize = i64::from_le_bytes(message);
-	sendCode(netCode::gotPacket.value(), &stream);
     //get file data
     let mut count = 0;
     'outer: loop {
         let mut message = [0;packetSize];
+        sendCode(netCode::gotPacket.value(), &stream);
         getPacket(&mut message, &stream);
         if &message[0..22]==b"[[FILE_DATA_FINISHED]]" {
             println!("FILE DATA RECEIVED");
@@ -179,8 +179,6 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
             file.write_all(&message).unwrap();
 			//println!("{:?}", &message[0..31]);	        
 		}
-		sendCode(netCode::gotPacket.value(), &stream);
-
     }
     //truncate the fill to its real size, removing x\00 padding
     file.set_len(fileSize as u64).unwrap();
