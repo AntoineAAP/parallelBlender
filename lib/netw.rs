@@ -5,13 +5,12 @@ use std::io::{BufReader, BufRead, SeekFrom};
 use std::net::TcpStream;
 use std::fs::File;
 
-const packetSize: usize = 128;
+const packetSize: usize = 2048;
 
 #[derive(Debug)]
 pub enum netCode {
     sendFile,
     sendCode,
-    sendPacket,
 	gotPacket,
     OK,
     FINISHED,
@@ -29,7 +28,6 @@ impl netCode {
         match self {
             sendFile => &[255,8],
             sendCode => &[255, 32],
-            sendPacket => &[255, 16],
 			gotPacket => &[32,16],
             OK => &[255, 255],
             FINISHED => &[255, 128],
@@ -43,7 +41,6 @@ pub fn codeFromValue(value: &[u8;2]) -> Result<netCode, netCodeError> {
     match value {
         &[255,8] => Ok(sendFile),
         &[255, 32] => Ok(sendCode),
-        &[255,16] => Ok(sendPacket),
 		&[32,16] => Ok(gotPacket),
         &[255, 255] => Ok(OK),
         &[255, 128] => Ok(FINISHED),
@@ -54,9 +51,9 @@ pub fn codeFromValue(value: &[u8;2]) -> Result<netCode, netCodeError> {
 
 pub fn sendCode(code: &[u8;2],mut stream: &TcpStream) {
     stream.write(code).unwrap();
-    //if code != netCode::sendPacket.value() {
+    if code != netCode::gotPacket.value() {
         println!("Code sent : {:?}", codeFromValue(&code).unwrap());
-    //}
+    }
     //dont wait for a response if you sent OK
     if code != netCode::OK.value() {
         let mut resp = [0;2];
@@ -72,13 +69,11 @@ pub fn sendCode(code: &[u8;2],mut stream: &TcpStream) {
 }
 
 fn sendPacket(packet: &[u8],withBlanck: bool, mut stream: &TcpStream) {
-    sendCode(netCode::sendPacket.value(), &stream);
-    //sendCode waits for confirmation (netCode::OK)
 	if withBlanck {
         sendWithBlanck(packet, &stream);
     }
     else {
-        stream.write(&packet).unwrap();
+        stream.write(packet).unwrap();
     }
 	match getCode(&stream) {
 		netCode::gotPacket => {},
@@ -88,12 +83,7 @@ fn sendPacket(packet: &[u8],withBlanck: bool, mut stream: &TcpStream) {
 }
 
 fn getPacket(buf : &mut [u8], mut stream: &TcpStream) {
-    match getCode(&stream) {
-        netCode::sendPacket => {
-            stream.read(buf).unwrap();
-        },
-        _ => {}
-    }
+	stream.read(buf).unwrap();
 }
 
 pub fn sendFile(name: &str, path: &str, mut stream: &TcpStream) {
@@ -110,7 +100,6 @@ pub fn sendFile(name: &str, path: &str, mut stream: &TcpStream) {
     //send file content
     let mut reader = BufReader::with_capacity(packetSize, &file);
     let max = ((fSize-fSize%packetSize as u64)/packetSize as u64)+1;
-    println!("{}", max*packetSize as u64); 
     'data: for x in 0..max {
         reader.seek(SeekFrom::Start(x*packetSize as u64)).unwrap();
 		if x==max-1 {
@@ -171,8 +160,8 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
     let fileSize;         
     let mut message = [0;8];
     getPacket(&mut message, &stream);
-	sendCode(netCode::gotPacket.value(), &stream);
     fileSize = i64::from_le_bytes(message);
+	sendCode(netCode::gotPacket.value(), &stream);
     //get file data
     let mut count = 0;
     'outer: loop {
@@ -180,7 +169,8 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
         getPacket(&mut message, &stream);
         if &message[0..22]==b"[[FILE_DATA_FINISHED]]" {
             println!("FILE DATA RECEIVED");
-                break 'outer;
+			sendCode(netCode::gotPacket.value(), &stream);
+            break 'outer;
         }
         else if &message[0..22]==b"[[FILE_SIZE_FINISHED]]" {
             println!("FILE SIZE : {}b", fileSize);
@@ -190,17 +180,7 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
 			//println!("{:?}", &message[0..31]);	        
 		}
 		sendCode(netCode::gotPacket.value(), &stream);
-	/*else {
-	    if count<500 {
-		file.write_all(&message).unwrap();
-		count+=1;
-		println!("{}", count);
-	    }
-	    else {
-		println!("FILE DATA RECEIVED");
-                break 'outer;
-	    }
-	}*/	
+
     }
     //truncate the fill to its real size, removing x\00 padding
     file.set_len(fileSize as u64).unwrap();
@@ -215,8 +195,8 @@ pub fn getCode(mut stream: &TcpStream) -> netCode {
     if &code != netCode::OK.value() {
         stream.write(netCode::OK.value()).unwrap();
     }
-    //if &code != netCode::sendPacket.value() {
+    if &code != netCode::gotPacket.value() {
         println!("Received code : {:?}", codeFromValue(&code).unwrap());
-    //}
+    }
     codeFromValue(&code).unwrap()
 }
