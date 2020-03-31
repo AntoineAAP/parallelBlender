@@ -1,0 +1,1 @@
+$1 --background --python $PWD"/split.py" -- $PWD"/coord.json"
