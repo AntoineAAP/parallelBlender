@@ -1,0 +1,1 @@
+cmd /C "%1 --background --python "%~dp0/split.py" --  "%~dp0/coord.json""
