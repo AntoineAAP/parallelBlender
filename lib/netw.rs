@@ -44,7 +44,7 @@ pub fn codeFromValue(value: &[u8;2]) -> Result<netCode, netCodeError> {
         &[255,8] => Ok(sendFile),
         &[255, 32] => Ok(sendCode),
         &[255,16] => Ok(sendPacket),
-		&[32,16] => Ok(gotPacket)
+		&[32,16] => Ok(gotPacket),
         &[255, 255] => Ok(OK),
         &[255, 128] => Ok(FINISHED),
         &[63,63] => Ok(DISC),
@@ -80,7 +80,7 @@ fn sendPacket(packet: &[u8],withBlanck: bool, mut stream: &TcpStream) {
     else {
         stream.write(&packet).unwrap();
     }
-	match getCode() {
+	match getCode(&stream) {
 		netCode::gotPacket => {},
 		_ => {panic!("Packet not received");}
 	}
