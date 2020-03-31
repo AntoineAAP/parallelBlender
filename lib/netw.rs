@@ -156,9 +156,11 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
     //get file name size then file name (to get the extension)
     let mut message = [0;8];
     getPacket(&mut message, &stream);
+	sendCode(netCode::gotPacket.value(), &stream);
     let fileNameSize = i64::from_le_bytes(message);
     let mut fileName = vec![0; fileNameSize as usize];
     getPacket(&mut fileName, &stream);
+	sendCode(netCode::gotPacket.value(), &stream);
     let mut fileName = std::str::from_utf8(&fileName).unwrap();
     println!("FILENAME : {}", fileName);
     if(fileName.len() >= 5) && (&fileName[fileName.len()-4..]) == "json" {
@@ -169,6 +171,7 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
     let fileSize;         
     let mut message = [0;8];
     getPacket(&mut message, &stream);
+	sendCode(netCode::gotPacket.value(), &stream);
     fileSize = i64::from_le_bytes(message);
     //get file data
     let mut count = 0;
