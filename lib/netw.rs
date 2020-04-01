@@ -11,6 +11,7 @@ const packetSize: usize = 2048;
 pub enum netCode {
     sendFile,
     sendCode,
+	sendPacket,
 	gotPacket,
     OK,
     FINISHED,
@@ -28,6 +29,7 @@ impl netCode {
         match self {
             sendFile => &[255,8],
             sendCode => &[255, 32],
+			sendPacket => &[255,16],
 			gotPacket => &[32,16],
             OK => &[255, 255],
             FINISHED => &[255, 128],
@@ -41,6 +43,7 @@ pub fn codeFromValue(value: &[u8;2]) -> Result<netCode, netCodeError> {
     match value {
         &[255,8] => Ok(sendFile),
         &[255, 32] => Ok(sendCode),
+		&[255,16] => Ok(sendPacket),
 		&[32,16] => Ok(gotPacket),
         &[255, 255] => Ok(OK),
         &[255, 128] => Ok(FINISHED),
@@ -51,11 +54,12 @@ pub fn codeFromValue(value: &[u8;2]) -> Result<netCode, netCodeError> {
 
 pub fn sendCode(code: &[u8;2],mut stream: &TcpStream) {
     stream.write(code).unwrap();
-    if code != netCode::gotPacket.value() {
+    if code != netCode::gotPacket.value() && code != netCode::sendPacket.value() {
         println!("Code sent : {:?}", codeFromValue(&code).unwrap());
     }
     //dont wait for a response if you sent OK
     if code != netCode::OK.value() {
+		println!("READING for {:?}", code);
         let mut resp = [0;2];
         stream.read(&mut resp).unwrap();
         if &resp == netCode::OK.value() {
@@ -69,6 +73,7 @@ pub fn sendCode(code: &[u8;2],mut stream: &TcpStream) {
 }
 
 fn sendPacket(packet: &[u8],withBlanck: bool, mut stream: &TcpStream) {
+	sendCode(netCode::sendPacket.value(), &stream);
 	if withBlanck {
         sendWithBlanck(packet, &stream);
     }
@@ -83,7 +88,12 @@ fn sendPacket(packet: &[u8],withBlanck: bool, mut stream: &TcpStream) {
 }
 
 fn getPacket(buf : &mut [u8], mut stream: &TcpStream) {
-	stream.read(buf).unwrap();
+	match getCode(&stream) {
+        netCode::sendPacket => {
+            stream.read(buf).unwrap();
+        },
+        _ => {}
+    }
 }
 
 pub fn sendFile(name: &str, path: &str, mut stream: &TcpStream) {
@@ -162,10 +172,10 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
     getPacket(&mut message, &stream);
     fileSize = i64::from_le_bytes(message);
     //get file data
+	sendCode(netCode::gotPacket.value(), &stream);
     let mut count = 0;
     'outer: loop {
         let mut message = [0;packetSize];
-        sendCode(netCode::gotPacket.value(), &stream);
         getPacket(&mut message, &stream);
         if &message[0..22]==b"[[FILE_DATA_FINISHED]]" {
             println!("FILE DATA RECEIVED");
@@ -179,6 +189,7 @@ pub fn getFile(mut stream: &TcpStream) -> std::io::Result<()> {
             file.write_all(&message).unwrap();
 			//println!("{:?}", &message[0..31]);	        
 		}
+		sendCode(netCode::gotPacket.value(), &stream);
     }
     //truncate the fill to its real size, removing x\00 padding
     file.set_len(fileSize as u64).unwrap();
@@ -193,7 +204,7 @@ pub fn getCode(mut stream: &TcpStream) -> netCode {
     if &code != netCode::OK.value() {
         stream.write(netCode::OK.value()).unwrap();
     }
-    if &code != netCode::gotPacket.value() {
+    if &code != netCode::gotPacket.value() && &code != netCode::gotPacket.value() {
         println!("Received code : {:?}", codeFromValue(&code).unwrap());
     }
     codeFromValue(&code).unwrap()
